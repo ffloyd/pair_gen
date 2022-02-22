@@ -1,34 +1,40 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
+type Map<K, V> = BTreeMap<K, V>;
+type Set<T> = BTreeSet<T>;
+
+#[derive(Debug)]
 struct Context {
-    people_map: BTreeMap<String, BTreeSet<String>>,
-    next_distribution: BTreeSet<BTreeSet<String>>,
+    people: Vec<String>,
+    people_map: Map<String, Set<String>>,
+    next_distribution: Set<Set<String>>,
 }
 
 impl Context {
     fn from_vec(people: Vec<String>) -> Self {
-        let mut people_map = BTreeMap::new();
+        let mut people_map = Map::new();
 
         for human in people.clone() {
             people_map.insert(
                 human.clone(),
-                BTreeSet::from_iter(people.iter().filter(|&x| *x != human).cloned()),
+                Set::from_iter(people.iter().filter(|&x| *x > human).cloned()),
             );
         }
 
-        let next_distribution = BTreeSet::new();
+        let next_distribution = Set::new();
 
-        return Self {
+        Self {
+            people,
             people_map,
             next_distribution,
-        };
+        }
     }
 
     fn new(people: &[&str]) -> Self {
         let people_as_strings: Vec<String> = people.iter().map(|x| x.to_string()).collect();
 
-        return Self::from_vec(people_as_strings);
+        Self::from_vec(people_as_strings)
     }
 
     fn register_group(&mut self, group: &[&str]) {
@@ -47,7 +53,24 @@ impl Context {
             }
         }
 
-        self.next_distribution.insert(BTreeSet::from_iter(group.clone().iter().cloned()));
+        self.next_distribution
+            .insert(Set::from_iter(group.iter().cloned()));
+    }
+
+    fn build_next_distribution(&mut self) {
+        let mut people_left = Set::from_iter(self.people.iter().cloned());
+        while !people_left.is_empty() {
+            let human_a = people_left.iter().cloned().next().expect("AAA");
+            people_left.remove(&human_a);
+
+            match people_left.iter().cloned().next() {
+                None => self.register_group(&[&human_a]),
+                Some(human_b) => {
+                    self.register_group(&[&human_a, &human_b]);
+                    people_left.remove(&human_b);
+                }
+            }
+        }
     }
 }
 
@@ -61,19 +84,13 @@ mod tests {
 
         assert_eq!(
             result.people_map,
-            BTreeMap::from([
-                (
-                    "Alice".to_string(),
-                    BTreeSet::from(["Alex".to_string(), "Bob".to_string()])
-                ),
+            Map::from([
                 (
                     "Alex".to_string(),
-                    BTreeSet::from(["Alice".to_string(), "Bob".to_string()])
+                    Set::from(["Alice".to_string(), "Bob".to_string()])
                 ),
-                (
-                    "Bob".to_string(),
-                    BTreeSet::from(["Alice".to_string(), "Alex".to_string()])
-                ),
+                ("Alice".to_string(), Set::from(["Bob".to_string()])),
+                ("Bob".to_string(), Set::from([])),
             ])
         )
     }
@@ -86,22 +103,40 @@ mod tests {
 
         assert_eq!(
             context.people_map,
-            BTreeMap::from([
-                ("Alice".to_string(), BTreeSet::from(["Alex".to_string()])),
+            Map::from([
+                ("Alice".to_string(), Set::from([])),
                 (
                     "Alex".to_string(),
-                    BTreeSet::from(["Alice".to_string(), "Bob".to_string()])
+                    Set::from(["Alice".to_string(), "Bob".to_string()])
                 ),
-                ("Bob".to_string(), BTreeSet::from(["Alex".to_string()]))
+                ("Bob".to_string(), Set::from([]))
             ])
         );
 
         assert!(context
             .next_distribution
-            .contains(&BTreeSet::from(["Alice".to_string(), "Bob".to_string()])))
+            .contains(&Set::from(["Alice".to_string(), "Bob".to_string()])))
+    }
+
+    #[test]
+    fn builds_next_distribution() {
+        let mut context = Context::new(&["Alice", "Alex", "Bob"]);
+
+        context.build_next_distribution();
+
+        assert_eq!(
+            context.next_distribution,
+            Set::from([
+                Set::from(["Alex".to_string(), "Alice".to_string()]),
+                Set::from(["Bob".to_string()])
+            ])
+        );
     }
 }
 
 fn main() {
-    println!("Hello world!");
+    let mut ctx = Context::new(&["Alex", "Alice", "Bob"]);
+    ctx.build_next_distribution();
+
+    println!("{:?}", ctx);
 }
