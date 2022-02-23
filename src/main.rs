@@ -1,142 +1,155 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-type Map<K, V> = BTreeMap<K, V>;
 type Set<T> = BTreeSet<T>;
+type Map<K, V> = BTreeMap<K, V>;
 
+/// Represents set of available pairs.
 #[derive(Debug)]
-struct Context {
-    people: Vec<String>,
-    people_map: Map<String, Set<String>>,
-    next_distribution: Set<Set<String>>,
+struct AvailablePairs<'a> {
+    data: Map<&'a str, Set<&'a str>>,
 }
 
-impl Context {
-    fn from_vec(people: Vec<String>) -> Self {
-        let mut people_map = Map::new();
+impl<'a> AvailablePairs<'a> {
+    /// Create set of all combinations of `names`.
+    fn new(names: &[&'a str]) -> Self {
+        let mut data = Map::new();
+        let sorted_names = {
+            let mut mutable_names = names.to_vec();
+            mutable_names.sort_unstable();
+            mutable_names
+        };
 
-        for human in people.clone() {
-            people_map.insert(
-                human.clone(),
-                Set::from_iter(people.iter().filter(|&x| *x > human).cloned()),
-            );
-        }
+        for &key_name in &sorted_names {
+            let greater_names: Set<&str> = sorted_names
+                .iter()
+                .skip_while(|&&value_name| value_name <= key_name)
+                .cloned()
+                .collect();
 
-        let next_distribution = Set::new();
-
-        Self {
-            people,
-            people_map,
-            next_distribution,
-        }
-    }
-
-    fn new(people: &[&str]) -> Self {
-        let people_as_strings: Vec<String> = people.iter().map(|x| x.to_string()).collect();
-
-        Self::from_vec(people_as_strings)
-    }
-
-    fn register_group(&mut self, group: &[&str]) {
-        let group_as_strings: Vec<String> = group.iter().map(|x| x.to_string()).collect();
-
-        self.register_group_vec(group_as_strings);
-    }
-
-    fn register_group_vec(&mut self, group: Vec<String>) {
-        for human_a in group.clone() {
-            for human_b in group.clone() {
-                self.people_map
-                    .get_mut(&human_a)
-                    .expect("AAA!!!")
-                    .remove(&human_b);
+            if !greater_names.is_empty() {
+                data.insert(key_name, greater_names);
             }
         }
 
-        self.next_distribution
-            .insert(Set::from_iter(group.iter().cloned()));
+        Self { data }
     }
 
-    fn build_next_distribution(&mut self) {
-        let mut people_left = Set::from_iter(self.people.iter().cloned());
-        while !people_left.is_empty() {
-            let human_a = people_left.iter().cloned().next().expect("AAA");
-            people_left.remove(&human_a);
+    /// Returns count of available pairs.
+    fn count(&self) -> usize {
+        self.data.iter().fold(0, |acc, (_, set)| acc + set.len())
+    }
 
-            match people_left.iter().cloned().next() {
-                None => self.register_group(&[&human_a]),
-                Some(human_b) => {
-                    self.register_group(&[&human_a, &human_b]);
-                    people_left.remove(&human_b);
-                }
-            }
+    /// Returns a pair made from `allowed_names`.
+    fn get_pair(&self, allowed_names: &Set<&str>) -> Option<(&str, &str)> {
+        self.data
+            .iter()
+            .find(|(&key, _)| allowed_names.contains(key))
+            .and_then(|(&first_name, set)| {
+                set.iter()
+                    .find(|&name| allowed_names.contains(name))
+                    .map(|&second_name| (first_name, second_name))
+            })
+    }
+
+    /// Removes pair from set. Returns `true` if pair was found.
+    ///
+    /// `name_a` should be less than `name_b`.
+    fn remove_pair(&mut self, name_a: &str, name_b: &str) -> bool {
+        self.data
+            .get_mut(name_a)
+            .map(|set| set.remove(name_b))
+            .unwrap_or(false)
+    }
+
+    /// Returns a pair made from `allowed_names` and removes from set.
+    fn pop_pair(&mut self, allowed_names: &Set<&str>) -> Option<(&str, &str)> {
+        let maybe_pair = self.get_pair(allowed_names);
+
+        if let Some((a, b)) = maybe_pair {
+            // self.remove_pair(a, b);
         }
+
+        maybe_pair
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    mod available_pairs {
+        use crate::*;
 
-    #[test]
-    fn create_context() {
-        let result = Context::new(&["Alice", "Alex", "Bob"]);
+        #[test]
+        fn new_dont_panic() {
+            AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+        }
 
-        assert_eq!(
-            result.people_map,
-            Map::from([
-                (
-                    "Alex".to_string(),
-                    Set::from(["Alice".to_string(), "Bob".to_string()])
-                ),
-                ("Alice".to_string(), Set::from(["Bob".to_string()])),
-                ("Bob".to_string(), Set::from([])),
-            ])
-        )
-    }
+        #[test]
+        fn count_for_3_names() {
+            let pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(pt.count(), 3);
+        }
 
-    #[test]
-    fn register_group() {
-        let mut context = Context::new(&["Alice", "Alex", "Bob"]);
+        #[test]
+        fn count_for_4_names() {
+            let pt = AvailablePairs::new(&["Alice", "Bob", "Zak", "John"]);
+            assert_eq!(pt.count(), 6);
+        }
 
-        context.register_group(&["Alice", "Bob"]);
+        #[test]
+        fn count_for_10_names() {
+            let pt = AvailablePairs::new(&["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+            assert_eq!(pt.count(), 45);
+        }
 
-        assert_eq!(
-            context.people_map,
-            Map::from([
-                ("Alice".to_string(), Set::from([])),
-                (
-                    "Alex".to_string(),
-                    Set::from(["Alice".to_string(), "Bob".to_string()])
-                ),
-                ("Bob".to_string(), Set::from([]))
-            ])
-        );
+        #[test]
+        fn get_pair_when_exists() {
+            let pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(
+                pt.get_pair(&Set::from(["Alice", "Bob"])),
+                Some(("Alice", "Bob"))
+            );
+        }
 
-        assert!(context
-            .next_distribution
-            .contains(&Set::from(["Alice".to_string(), "Bob".to_string()])))
-    }
+        #[test]
+        fn get_pair_when_impossible() {
+            let pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(pt.get_pair(&Set::from(["Alice", "Jane"])), None);
+        }
 
-    #[test]
-    fn builds_next_distribution() {
-        let mut context = Context::new(&["Alice", "Alex", "Bob"]);
+        #[test]
+        fn remove_pair_when_exists() {
+            let mut pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(pt.remove_pair("Alice", "Bob"), true);
+        }
 
-        context.build_next_distribution();
+        #[test]
+        fn remove_pair_when_impossible() {
+            let mut pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(pt.remove_pair("Alice", "Bob"), true);
+            assert_eq!(pt.remove_pair("Alice", "Bob"), false);
+        }
 
-        assert_eq!(
-            context.next_distribution,
-            Set::from([
-                Set::from(["Alex".to_string(), "Alice".to_string()]),
-                Set::from(["Bob".to_string()])
-            ])
-        );
+        #[test]
+        fn pop_pair_when_exists() {
+            let mut pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(
+                pt.pop_pair(&Set::from(["Alice", "Bob"])),
+                Some(("Alice", "Bob"))
+            );
+            assert_eq!(pt.pop_pair(&Set::from(["Alice", "Bob"])), None);
+        }
+
+        #[test]
+        fn pop_pair_when_impossible() {
+            let mut pt = AvailablePairs::new(&["Alice", "Bob", "Zak"]);
+            assert_eq!(pt.pop_pair(&Set::from(["Alice", "Jane"])), None);
+        }
     }
 }
 
 fn main() {
-    let mut ctx = Context::new(&["Alex", "Alice", "Bob"]);
-    ctx.build_next_distribution();
+    let ap = AvailablePairs::new(&["Alice", "Bob", "Jane", "Aaa"]);
 
-    println!("{:?}", ctx);
+    println!("ap: {:?}", ap);
 }
