@@ -1,16 +1,17 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fmt::Debug;
 
 type Set<T> = BTreeSet<T>;
 type Map<K, V> = BTreeMap<K, V>;
 
 /// Represents set of available pairs.
 #[derive(Debug)]
-struct AvailablePairs<T: Ord + Clone + Copy> {
+struct AvailablePairs<T: Ord + Clone + Copy + Debug> {
     data: Map<T, Set<T>>,
 }
 
-impl<T: Ord + Clone + Copy> AvailablePairs<T> {
+impl<T: Ord + Clone + Copy + Debug> AvailablePairs<T> {
     /// Create set of all combinations of `names`.
     fn new(names: &[T]) -> Self {
         let mut data = Map::new();
@@ -44,7 +45,7 @@ impl<T: Ord + Clone + Copy> AvailablePairs<T> {
     fn get_pair(&self, allowed_names: &Set<T>) -> Option<(T, T)> {
         self.data
             .iter()
-            .find(|(key, _)| allowed_names.contains(key))
+            .find(|(key, set)| allowed_names.contains(key) && !set.is_empty())
             .and_then(|(&first_name, set)| {
                 set.iter()
                     .find(|&name| allowed_names.contains(name))
@@ -87,6 +88,20 @@ impl<T: Ord + Clone + Copy> AvailablePairs<T> {
         }
 
         result
+    }
+
+    /// Returns `Some` distribution that uses all allowed names or `None`.
+    fn pop_distribution_strict(&mut self, allowed_names: &Set<T>) -> Option<Set<(T, T)>> {
+        let mut allowed_names_mut = allowed_names.clone();
+
+        let result = self.pop_distribution(&mut allowed_names_mut);
+
+        if allowed_names_mut.is_empty() {
+            Some(result)
+        } else {
+            println!("Failed at: {:?}", result);
+            None
+        }
     }
 }
 
@@ -192,11 +207,44 @@ mod tests {
 
             assert_eq!(ppl_set, Set::from(["Jane"]));
         }
+
+        #[test]
+        fn pop_distribution_strict_when_possible() {
+            let people = ["Alice", "Bob", "Jane", "John"];
+            let mut pt = AvailablePairs::new(&people);
+            assert_eq!(
+                pt.pop_distribution_strict(&Set::from(people)),
+                Some(Set::from([
+                    ("Alice", "Bob"),
+                    ("Jane", "John")
+                ]))
+            );
+        }
+
+        #[test]
+        fn pop_distribution_strict_when_impossible() {
+            let people = ["Alice", "Bob", "Jane"];
+            let mut pt = AvailablePairs::new(&people);
+            let ppl_set = Set::from(people);
+
+            assert_eq!(
+                pt.pop_distribution_strict(&ppl_set),
+                None
+            );
+        }
     }
 }
 
 fn main() {
-    let ap = AvailablePairs::new(&["Alice", "Bob", "Jane", "Aaa"]);
+    let ppl = ["Dejan", "Edin", "Erik", "Roman", "Iuri", "Reza", "Jonas", "Max", "Moritz", "Tuomo", "Rafael", "NoPair"];
+    let mut ap = AvailablePairs::new(&ppl);
 
-    println!("ap: {:?}", ap);
+    println!("Total uniq pairs: {}", ap.count());
+    println!("---");
+
+    while let Some(dis) = ap.pop_distribution_strict(&Set::from(ppl)) {
+        println!("{:?}", dis);
+    }
+
+    println!("Pairs left: {:?}", ap);
 }
